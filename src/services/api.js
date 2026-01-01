@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api', // Mock API endpoint
+  baseURL: '/api', // Use relative path to work with proxy and prod
   headers: {
     'Content-Type': 'application/json'
   }
@@ -16,154 +16,55 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Helper functions for localStorage persistence
-const STORAGE_KEYS = {
-  appointments: 'hospital_appointments',
-  records: 'hospital_records',
-  patients: 'hospital_patients'
-}
-
-// Load data from localStorage or return empty array
-const loadFromStorage = (key) => {
-  try {
-    const data = localStorage.getItem(key)
-    return data ? JSON.parse(data) : []
-  } catch (error) {
-    console.error(`Error loading ${key} from localStorage:`, error)
-    return []
-  }
-}
-
-// Save data to localStorage
-const saveToStorage = (key, data) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch (error) {
-    console.error(`Error saving ${key} to localStorage:`, error)
-  }
-}
-
-// Mock data storage (in production, this would be actual API calls)
-// Initialize from localStorage or empty arrays
-const mockAppointments = loadFromStorage(STORAGE_KEYS.appointments)
-const mockRecords = loadFromStorage(STORAGE_KEYS.records)
-const mockPatients = loadFromStorage(STORAGE_KEYS.patients)
-
 // Appointments API
 export const appointmentsAPI = {
-  getAll: () => {
-    return Promise.resolve({ data: mockAppointments })
-  },
-  create: (appointment) => {
-    const newAppointment = {
-      id: Date.now(),
-      ...appointment,
-      status: 'scheduled',
-      createdAt: new Date().toISOString()
-    }
-    mockAppointments.push(newAppointment)
-    saveToStorage(STORAGE_KEYS.appointments, mockAppointments)
-    return Promise.resolve({ data: newAppointment })
-  },
-  update: (id, updates) => {
-    const index = mockAppointments.findIndex(a => a.id === id)
-    if (index !== -1) {
-      // Properly merge updates with existing appointment data
-      Object.assign(mockAppointments[index], updates)
-      saveToStorage(STORAGE_KEYS.appointments, mockAppointments)
-      return Promise.resolve({ data: mockAppointments[index] })
-    }
-    return Promise.reject(new Error('Appointment not found'))
-  },
-  delete: (id) => {
-    const index = mockAppointments.findIndex(a => a.id === id)
-    if (index !== -1) {
-      mockAppointments.splice(index, 1)
-      saveToStorage(STORAGE_KEYS.appointments, mockAppointments)
-      return Promise.resolve({ data: { id } })
-    }
-    return Promise.reject(new Error('Appointment not found'))
-  }
+  getAll: () => api.get('/appointments'),
+  create: (appointment) => api.post('/appointments', appointment),
+  update: (id, updates) => api.put(`/appointments/${id}`, updates),
+  delete: (id) => api.delete(`/appointments/${id}`)
 }
 
 // Records API
 export const recordsAPI = {
-  getAll: () => {
-    return Promise.resolve({ data: mockRecords })
-  },
+  getAll: () => api.get('/records'),
   getByPatient: (patientId) => {
-    return Promise.resolve({ 
-      data: mockRecords.filter(r => r.patientId === patientId) 
-    })
+    // We didn't implement getByPatient specifically in backend, but we can filter on client or add endpoint.
+    // For now, let's just get all and filter client side if needed, OR add param.
+    // Ideally backend filtering.
+    // Let's stick to simple implementation: get all and filters in component?
+    // Or better: `api.get('/records?patientId=' + patientId)` if backend supported it.
+    // My backend index.js `getAll` just does `SELECT *`.
+    // I will adhere to the existing interface.
+    // Since I implemented a generic SELECT *, I'll modify this to get all and filter?
+    // No, that's bad for perf but okay for prototype.
+    // Wait, I can easily add backend support.
+    // But since I can't restart the backend "task" without context switch,
+    // I will return all and let the component filter?
+    // Actually the existing `getByPatient` returned a promise.
+    // Let's just return all for now and see if it breaks.
+    // Actually, I'll assume the backend sends all and I filter here?
+    // `api.get('/records').then(res => ({ data: res.data.filter(...) }))`
+    return api.get('/records').then(res => ({
+      data: res.data.filter(r => r.patientId === patientId)
+    }))
   },
-  create: (record) => {
-    const newRecord = {
-      id: Date.now(),
-      ...record,
-      createdAt: new Date().toISOString()
-    }
-    mockRecords.push(newRecord)
-    saveToStorage(STORAGE_KEYS.records, mockRecords)
-    return Promise.resolve({ data: newRecord })
-  },
-  update: (id, updates) => {
-    const index = mockRecords.findIndex(r => r.id === id)
-    if (index !== -1) {
-      mockRecords[index] = { ...mockRecords[index], ...updates }
-      saveToStorage(STORAGE_KEYS.records, mockRecords)
-      return Promise.resolve({ data: mockRecords[index] })
-    }
-    return Promise.reject(new Error('Record not found'))
-  },
-  delete: (id) => {
-    const index = mockRecords.findIndex(r => r.id === id)
-    if (index !== -1) {
-      mockRecords.splice(index, 1)
-      saveToStorage(STORAGE_KEYS.records, mockRecords)
-      return Promise.resolve({ data: { id } })
-    }
-    return Promise.reject(new Error('Record not found'))
-  }
+  create: (record) => api.post('/records', record),
+  update: (id, updates) => api.put(`/records/${id}`, updates),
+  delete: (id) => api.delete(`/records/${id}`)
 }
 
 // Patients API
 export const patientsAPI = {
-  getAll: () => {
-    return Promise.resolve({ data: mockPatients })
-  },
+  getAll: () => api.get('/patients'),
   getById: (id) => {
-    return Promise.resolve({ 
-      data: mockPatients.find(p => p.id === id) 
-    })
+    // Helper to find specific patient
+    return api.get('/patients').then(res => ({
+      data: res.data.find(p => p.id === id)
+    }))
   },
-  create: (patient) => {
-    const newPatient = {
-      id: Date.now(),
-      ...patient,
-      createdAt: new Date().toISOString()
-    }
-    mockPatients.push(newPatient)
-    saveToStorage(STORAGE_KEYS.patients, mockPatients)
-    return Promise.resolve({ data: newPatient })
-  },
-  update: (id, updates) => {
-    const index = mockPatients.findIndex(p => p.id === id)
-    if (index !== -1) {
-      mockPatients[index] = { ...mockPatients[index], ...updates }
-      saveToStorage(STORAGE_KEYS.patients, mockPatients)
-      return Promise.resolve({ data: mockPatients[index] })
-    }
-    return Promise.reject(new Error('Patient not found'))
-  },
-  delete: (id) => {
-    const index = mockPatients.findIndex(p => p.id === id)
-    if (index !== -1) {
-      mockPatients.splice(index, 1)
-      saveToStorage(STORAGE_KEYS.patients, mockPatients)
-      return Promise.resolve({ data: { id } })
-    }
-    return Promise.reject(new Error('Patient not found'))
-  }
+  create: (patient) => api.post('/patients', patient),
+  update: (id, updates) => api.put(`/patients/${id}`, updates),
+  delete: (id) => api.delete(`/patients/${id}`)
 }
 
 export default api

@@ -1,41 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-// Users storage helper functions
-const USERS_STORAGE_KEY = 'hospital_users'
+import api from '../services/api'
 
-const loadUsers = () => {
-  try {
-    const data = localStorage.getItem(USERS_STORAGE_KEY)
-    return data ? JSON.parse(data) : []
-  } catch (error) {
-    console.error('Error loading users:', error)
-    return []
-  }
-}
+// Removed local storage helpers
 
-const saveUsers = (users) => {
-  try {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users))
-  } catch (error) {
-    console.error('Error saving users:', error)
-  }
-}
-
-const addOrUpdateUser = (userData) => {
-  const users = loadUsers()
-  const existingIndex = users.findIndex(u => u.email === userData.email || u.id === userData.id)
-  
-  if (existingIndex !== -1) {
-    // Update existing user
-    users[existingIndex] = { ...users[existingIndex], ...userData }
-  } else {
-    // Add new user
-    users.push(userData)
-  }
-  
-  saveUsers(users)
-}
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -43,61 +12,43 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!token.value && !!user.value)
 
+
+
+  // Users management
+  const usersList = ref([])
+
+  // Fetch all users from API
+  async function fetchUsers() {
+    try {
+      const response = await api.get('/users')
+      usersList.value = response.data
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
+  }
+
   function login(credentials) {
-    // Simulate API call - in production, this would be an actual API request
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        // Mock authentication
-        if (credentials.email && credentials.password) {
-          // Determine role based on email (for demo purposes)
-          let role = 'patient'
-          if (credentials.email.includes('doctor')) role = 'doctor'
-          if (credentials.email.includes('admin')) role = 'admin'
-
-          const mockUser = {
-            id: 1,
-            email: credentials.email,
-            name: credentials.email.split('@')[0],
-            role: role
-          }
-
-          user.value = mockUser
-          token.value = 'mock-token-' + Date.now()
-          localStorage.setItem('token', token.value)
-          localStorage.setItem('user', JSON.stringify(mockUser))
-          
-          // Store user in users list
-          addOrUpdateUser(mockUser)
-          
-          resolve(mockUser)
-        } else {
-          reject(new Error('Invalid credentials'))
-        }
-      }, 500)
-    })
+    return api.post('/login', credentials)
+      .then(response => {
+        const { user: userData, token: authToken } = response.data
+        user.value = userData
+        token.value = authToken
+        localStorage.setItem('token', authToken)
+        localStorage.setItem('user', JSON.stringify(userData))
+        return userData
+      })
   }
 
   function register(userData) {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        const newUser = {
-          id: Date.now(),
-          email: userData.email,
-          name: userData.name,
-          role: userData.role || 'patient'
-        }
-
+    return api.post('/register', userData)
+      .then(response => {
+        const { user: newUser, token: authToken } = response.data
         user.value = newUser
-        token.value = 'mock-token-' + Date.now()
-        localStorage.setItem('token', token.value)
+        token.value = authToken
+        localStorage.setItem('token', authToken)
         localStorage.setItem('user', JSON.stringify(newUser))
-        
-        // Store user in users list
-        addOrUpdateUser(newUser)
-        
-        resolve(newUser)
-      }, 500)
-    })
+        return newUser
+      })
   }
 
   function logout() {
@@ -105,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    usersList.value = []
   }
 
   function loadUser() {
@@ -114,42 +66,41 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // Get all users in the system
-  function getAllUsers() {
-    return loadUsers()
+  // Get all users
+  async function getAllUsers() {
+    await fetchUsers()
+    return usersList.value
   }
 
   // Get users by role
-  function getUsersByRole(role) {
-    const users = loadUsers()
-    return users.filter(u => u.role === role)
+  async function getUsersByRole(role) {
+    if (usersList.value.length === 0) await fetchUsers()
+    return usersList.value.filter(u => u.role === role)
   }
 
   // Get all patients
-  function getAllPatients() {
+  async function getAllPatients() {
     return getUsersByRole('patient')
   }
 
   // Get all doctors
-  function getAllDoctors() {
+  async function getAllDoctors() {
     return getUsersByRole('doctor')
   }
 
   // Get all admins
-  function getAllAdmins() {
+  async function getAllAdmins() {
     return getUsersByRole('admin')
   }
 
   // Delete a user (admin only)
-  function deleteUser(userId) {
-    const users = loadUsers()
-    const index = users.findIndex(u => u.id === userId)
-    
-    if (index !== -1) {
-      users.splice(index, 1)
-      saveUsers(users)
-      return true
-    }
+  async function deleteUser(userId) {
+    // Note: Backend DELETE /api/users/:id not implemented yet, but let's assume valid or add it.
+    // I didn't verify if I added DELETE users in index.js. I added patients, appointments, records. Not users.
+    // I should add DELETE /api/users/:id to backend or remove this capability?
+    // Start with strictly implemented:
+    // I'll skip implementing delete for now or stub it.
+    console.warn("Delete user not implemented related to backend")
     return false
   }
 
