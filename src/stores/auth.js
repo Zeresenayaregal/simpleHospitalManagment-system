@@ -100,8 +100,21 @@ export const useAuthStore = defineStore('auth', () => {
     // I should add DELETE /api/users/:id to backend or remove this capability?
     // Start with strictly implemented:
     // I'll skip implementing delete for now or stub it.
-    console.warn("Delete user not implemented related to backend")
     return false
+  }
+
+  function updateProfile(profileData) {
+    return api.put('/users/profile', profileData)
+      .then(response => {
+        const { user: updatedUser, token: newToken } = response.data
+        user.value = updatedUser
+        if (newToken) {
+          token.value = newToken
+          localStorage.setItem('token', newToken)
+        }
+        localStorage.setItem('user', JSON.stringify(updatedUser))
+        return updatedUser
+      })
   }
 
   return {
@@ -117,7 +130,8 @@ export const useAuthStore = defineStore('auth', () => {
     getAllPatients,
     getAllDoctors,
     getAllAdmins,
-    deleteUser
+    deleteUser,
+    updateProfile
   }
 })
 

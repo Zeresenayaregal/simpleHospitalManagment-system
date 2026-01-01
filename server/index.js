@@ -94,6 +94,46 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+app.put('/api/users/profile', authenticateToken, async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        const userId = req.user.id; // From token
+
+        let query = 'UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email)';
+        let params = [name, email];
+        let paramCount = 3;
+
+        // If password is provided, hash it and add to query
+        if (password && password.trim() !== '') {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            query += `, password = $${paramCount}`;
+            params.push(hashedPassword);
+            paramCount++;
+        }
+
+        query += ` WHERE id = $${paramCount} RETURNING id, name, email, role`;
+        params.push(userId);
+
+        const result = await db.query(query, params);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = result.rows[0];
+        // Generate new token as details might have changed
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+
+        res.json({ user, token });
+    } catch (err) {
+        console.error(err);
+        if (err.constraint === 'users_email_key') {
+            return res.status(400).json({ error: 'Email already in use' });
+        }
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 app.get('/api/users', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM users');

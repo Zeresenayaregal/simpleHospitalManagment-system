@@ -29,6 +29,30 @@ const initSchema = async () => {
       console.log('Password column might already exist or error adding it', e);
     }
 
+    // Auto-migration: Fix NULL or placeholder passwords for existing users
+    try {
+      const bcrypt = require('bcryptjs');
+      const DEFAULT_PASSWORD = 'tempPass123!';
+
+      const usersToFix = await client.query(
+        "SELECT id, email FROM users WHERE password IS NULL OR password = 'hashed_placeholder' OR password = ''"
+      );
+
+      if (usersToFix.rows.length > 0) {
+        console.log(`Found ${usersToFix.rows.length} users with missing passwords. Migrating...`);
+        const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+
+        for (const user of usersToFix.rows) {
+          await client.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
+          console.log(`Migrated user: ${user.email}`);
+        }
+        console.log(`Migration complete. Default password set to: ${DEFAULT_PASSWORD}`);
+      }
+    } catch (migrationErr) {
+      console.error('Auto-migration failed:', migrationErr);
+      // Don't crash server for this, but log it
+    }
+
     // Patients Table (Separated for clarity or linked to users?)
     // For now, mirroring the frontend which treats patients somewhat separately or as roles.
     // The frontend mock has a separate "patients" list in api.js, but auth.js also has users with role='patient'.

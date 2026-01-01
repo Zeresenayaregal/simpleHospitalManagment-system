@@ -85,6 +85,12 @@
               <h3>Manage Patients</h3>
               <p>View and manage patients</p>
             </router-link>
+
+            <router-link to="/profile" class="action-card">
+              <span class="action-icon">⚙️</span>
+              <h3>Profile</h3>
+              <p>Update your account details</p>
+            </router-link>
           </div>
         </div>
       </div>

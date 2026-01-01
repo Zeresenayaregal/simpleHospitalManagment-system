@@ -41,6 +41,18 @@ const routes = [
     meta: { requiresAuth: true, requiresRole: ['admin', 'doctor'] }
   },
   {
+    path: '/doctor-dashboard',
+    name: 'DoctorDashboard',
+    component: () => import('../views/DoctorDashboard.vue'),
+    meta: { requiresAuth: true, requiresRole: ['doctor'] }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('../views/Profile.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/users',
     name: 'Users',
     component: () => import('../views/Users.vue'),
@@ -55,7 +67,7 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
-  
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else if (to.meta.requiresRole && !to.meta.requiresRole.includes(authStore.user?.role)) {
