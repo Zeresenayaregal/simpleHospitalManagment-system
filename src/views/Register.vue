@@ -89,7 +89,7 @@ const handleRegister = async () => {
     })
     router.push('/dashboard')
   } catch (err) {
-    error.value = err.message || 'Registration failed. Please try again.'
+    error.value = err.response?.data?.error || err.message || 'Registration failed. Please try again.'
   } finally {
     loading.value = false
   }

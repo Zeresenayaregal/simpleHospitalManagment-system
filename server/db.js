@@ -9,23 +9,31 @@ const pool = new Pool({
 const initSchema = async () => {
   try {
     const client = await pool.connect();
-    
+
     // Users Table
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
         name VARCHAR(255) NOT NULL,
         role VARCHAR(50) DEFAULT 'patient',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
+    // Add password column if it doesn't exist (migrations-ish)
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR(255) DEFAULT 'hashed_placeholder';`);
+    } catch (e) {
+      console.log('Password column might already exist or error adding it', e);
+    }
+
     // Patients Table (Separated for clarity or linked to users?)
     // For now, mirroring the frontend which treats patients somewhat separately or as roles.
     // The frontend mock has a separate "patients" list in api.js, but auth.js also has users with role='patient'.
     // Let's create a generic table for the entities managed by api.js
-    
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS patients (
         id SERIAL PRIMARY KEY,

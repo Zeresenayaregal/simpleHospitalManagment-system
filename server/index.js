@@ -2,7 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const db = require('./db');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key_change_this_in_prod';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,23 +14,46 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Middleware to authenticate token
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
 // Users API (Auth)
 app.post('/api/register', async (req, res) => {
     try {
-        const { email, name, role } = req.body;
+        const { email, name, role, password } = req.body;
+
+        if (!email || !password || !name) {
+            return res.status(400).json({ error: 'Email, name, and password are required' });
+        }
+
         // Check if user exists
         const existing = await db.query('SELECT * FROM users WHERE email = $1', [email]);
         if (existing.rows.length > 0) {
-            const user = existing.rows[0];
-            return res.json({ user, token: `mock-token-${user.id}` });
+            return res.status(400).json({ error: 'User already exists' });
         }
 
+        const hashedPassword = await bcrypt.hash(password, 10);
+
         const result = await db.query(
-            'INSERT INTO users (email, name, role) VALUES ($1, $2, $3) RETURNING *',
-            [email, name, role || 'patient']
+            'INSERT INTO users (email, name, role, password) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role',
+            [email, name, role || 'patient', hashedPassword]
         );
         const user = result.rows[0];
-        res.json({ user, token: `mock-token-${user.id}` });
+
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+
+        res.json({ user, token });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
@@ -36,32 +63,38 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        // Mock login logic preserved with DB check
+
         const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
 
-        if (result.rows.length > 0) {
-            const user = result.rows[0];
-            return res.json({ user, token: `mock-token-${user.id}` });
-        } else {
-            // Auto-create for prototype feel if not found (mimics previous mock behavior)
-            let role = 'patient';
-            if (email.includes('doctor')) role = 'doctor';
-            if (email.includes('admin')) role = 'admin';
-
-            const newUser = await db.query(
-                'INSERT INTO users (email, name, role) VALUES ($1, $2, $3) RETURNING *',
-                [email, email.split('@')[0], role]
-            );
-            const user = newUser.rows[0];
-            return res.json({ user, token: `mock-token-${user.id}` });
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'Invalid credentials' });
         }
+
+        const user = result.rows[0];
+
+        // Handle legacy users without password or check hash
+        // Ideally we wouldn't have legacy users without password in a real migration, 
+        // but for this prototype we assume new users or handled ones.
+        // If password is 'hashed_placeholder' from migration and they try to login, it will fail, which is correct.
+
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(400).json({ error: 'Invalid credentials' });
+        }
+
+        const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1h' });
+
+        // Don't send password back
+        delete user.password;
+
+        return res.json({ user, token });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error' });
     }
 });
 
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM users');
         res.json(result.rows);
@@ -71,7 +104,7 @@ app.get('/api/users', async (req, res) => {
 });
 
 // Patients API
-app.get('/api/patients', async (req, res) => {
+app.get('/api/patients', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM patients');
         res.json(result.rows);
@@ -80,7 +113,7 @@ app.get('/api/patients', async (req, res) => {
     }
 });
 
-app.post('/api/patients', async (req, res) => {
+app.post('/api/patients', authenticateToken, async (req, res) => {
     try {
         const { name, email, phone, address } = req.body;
         const result = await db.query(
@@ -93,7 +126,7 @@ app.post('/api/patients', async (req, res) => {
     }
 });
 
-app.put('/api/patients/:id', async (req, res) => {
+app.put('/api/patients/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { name, email, phone, address } = req.body;
@@ -107,7 +140,7 @@ app.put('/api/patients/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/patients/:id', async (req, res) => {
+app.delete('/api/patients/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         await db.query('DELETE FROM patients WHERE id = $1', [id]);
@@ -118,7 +151,7 @@ app.delete('/api/patients/:id', async (req, res) => {
 });
 
 // Appointments API
-app.get('/api/appointments', async (req, res) => {
+app.get('/api/appointments', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM appointments');
         res.json(result.rows);
@@ -127,7 +160,7 @@ app.get('/api/appointments', async (req, res) => {
     }
 });
 
-app.post('/api/appointments', async (req, res) => {
+app.post('/api/appointments', authenticateToken, async (req, res) => {
     try {
         const { patient_id, doctor_id, date, reason, status } = req.body;
         const pId = patient_id || req.body.patientId;
@@ -145,7 +178,7 @@ app.post('/api/appointments', async (req, res) => {
     }
 });
 
-app.put('/api/appointments/:id', async (req, res) => {
+app.put('/api/appointments/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { status, date, reason } = req.body;
@@ -163,7 +196,7 @@ app.put('/api/appointments/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/appointments/:id', async (req, res) => {
+app.delete('/api/appointments/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         await db.query('DELETE FROM appointments WHERE id = $1', [id]);
@@ -174,7 +207,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 });
 
 // Records API
-app.get('/api/records', async (req, res) => {
+app.get('/api/records', authenticateToken, async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM records');
         const rows = result.rows.map(r => ({ ...r, patientId: r.patient_id }));
@@ -184,7 +217,7 @@ app.get('/api/records', async (req, res) => {
     }
 });
 
-app.post('/api/records', async (req, res) => {
+app.post('/api/records', authenticateToken, async (req, res) => {
     try {
         const { patientId, details, diagnosis, prescription } = req.body;
         const result = await db.query(
@@ -198,7 +231,7 @@ app.post('/api/records', async (req, res) => {
     }
 });
 
-app.put('/api/records/:id', async (req, res) => {
+app.put('/api/records/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { details, diagnosis, prescription } = req.body;
@@ -214,7 +247,7 @@ app.put('/api/records/:id', async (req, res) => {
     }
 });
 
-app.delete('/api/records/:id', async (req, res) => {
+app.delete('/api/records/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         await db.query('DELETE FROM records WHERE id = $1', [id]);

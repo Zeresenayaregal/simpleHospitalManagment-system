@@ -73,7 +73,7 @@ const handleLogin = async () => {
     })
     router.push('/dashboard')
   } catch (err) {
-    error.value = err.message || 'Invalid credentials. Please try again.'
+    error.value = err.response?.data?.error || err.message || 'Invalid credentials. Please try again.'
   } finally {
     loading.value = false
   }
